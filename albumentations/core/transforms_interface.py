@@ -8,8 +8,8 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
+from albumentations.augmentations.functional import noop
 from albumentations.core.validation import ValidatedTransformMeta
-from albumentations.functional import noop
 
 from .serialization import Serializable, SerializableMeta, get_shortest_class_fullname
 from .types import (
