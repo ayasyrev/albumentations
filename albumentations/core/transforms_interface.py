@@ -43,10 +43,16 @@ class CombinedMeta(SerializableMeta, ValidatedTransformMeta):
 
 
 class BasicTransform(Serializable, metaclass=CombinedMeta):
+    _targets: Union[Tuple[Targets, ...], Targets]
     call_backup = None
     interpolation: Union[int, Interpolation]
     fill_value: ColorType
     mask_fill_value: Optional[ColorType]
+    # replay mode params
+    deterministic: bool = False
+    save_key = "replay"
+    replay_mode = False
+    applied_in_replay = False
 
     class InitSchema(BaseTransformInitSchema):
         pass
@@ -55,13 +61,8 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
         self.p = p
         self.always_apply = always_apply
         self._additional_targets: Dict[str, str] = {}
-
         # replay mode params
-        self.deterministic = False
-        self.save_key = "replay"
         self.params: Dict[Any, Any] = {}
-        self.replay_mode = False
-        self.applied_in_replay = False
 
     def __call__(self, *args: Any, force_apply: bool = False, **kwargs: Any) -> Any:
         if args:
@@ -96,8 +97,6 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
         return kwargs
 
     def apply_with_params(self, params: Dict[str, Any], *args: Any, **kwargs: Any) -> Dict[str, Any]:
-        if params is None:
-            return kwargs
         params = self.update_params(params, **kwargs)
         res = {}
         for key, arg in kwargs.items():
@@ -134,6 +133,7 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
         raise NotImplementedError
 
     def get_params(self) -> Dict[str, Any]:
+        """Returns parameters independent of input"""
         return {}
 
     @property
@@ -172,9 +172,13 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
 
     @property
     def targets_as_params(self) -> List[str]:
+        """Targets used to get params"""
         return []
 
     def get_params_dependent_on_targets(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Returns parameters dependent on targets.
+        Dependent target is defined in `self.targets_as_params`
+        """
         raise NotImplementedError(
             "Method get_params_dependent_on_targets is not implemented in class " + self.__class__.__name__,
         )
