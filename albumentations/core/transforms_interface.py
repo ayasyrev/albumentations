@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
 from albumentations.core.validation import ValidatedTransformMeta
+from albumentations.functional import noop
 
 from .serialization import Serializable, SerializableMeta, get_shortest_class_fullname
 from .types import (
@@ -92,12 +93,13 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
                         " because its' params depend on targets.",
                     )
                 kwargs[self.save_key][id(self)] = deepcopy(params)
+            params = self.update_params(params, **kwargs)
             return self.apply_with_params(params, **kwargs)
 
         return kwargs
 
     def apply_with_params(self, params: Dict[str, Any], *args: Any, **kwargs: Any) -> Dict[str, Any]:
-        params = self.update_params(params, **kwargs)
+        """Apply transforms with parameters."""
         res = {}
         for key, arg in kwargs.items():
             if arg is not None:
@@ -127,7 +129,7 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
         if key in self._additional_targets:
             transform_key = self._additional_targets.get(key, key)
 
-        return self.targets.get(transform_key, lambda x, **p: x)
+        return self.targets.get(transform_key, noop)
 
     def apply(self, img: np.ndarray, *args: Any, **params: Any) -> np.ndarray:
         raise NotImplementedError
@@ -138,10 +140,10 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
 
     @property
     def targets(self) -> Dict[str, Callable[..., Any]]:
-        # you must specify targets in subclass
-        # foe example:
-        # >>  ('image', 'mask')
-        # >>  ('image', 'boxes')
+        # mapping for targets and methods for which they depend
+        # for example:
+        # >>  {"image": self.apply}
+        # >>  {"masks": self.apply_to_masks}
         raise NotImplementedError
 
     def update_params(self, params: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
