@@ -8,6 +8,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
+from albumentations.augmentations.functional import noop
 from albumentations.core.validation import ValidatedTransformMeta
 
 from .serialization import Serializable, SerializableMeta, get_shortest_class_fullname
@@ -43,10 +44,16 @@ class CombinedMeta(SerializableMeta, ValidatedTransformMeta):
 
 
 class BasicTransform(Serializable, metaclass=CombinedMeta):
+    _targets: Union[Tuple[Targets, ...], Targets]
     call_backup = None
     interpolation: Union[int, Interpolation]
     fill_value: ColorType
     mask_fill_value: Optional[ColorType]
+    # replay mode params
+    deterministic: bool = False
+    save_key = "replay"
+    replay_mode = False
+    applied_in_replay = False
 
     class InitSchema(BaseTransformInitSchema):
         pass
@@ -55,13 +62,8 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
         self.p = p
         self.always_apply = always_apply
         self._additional_targets: Dict[str, str] = {}
-
         # replay mode params
-        self.deterministic = False
-        self.save_key = "replay"
         self.params: Dict[Any, Any] = {}
-        self.replay_mode = False
-        self.applied_in_replay = False
 
     def __call__(self, *args: Any, force_apply: bool = False, **kwargs: Any) -> Any:
         if args:
@@ -96,8 +98,7 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
         return kwargs
 
     def apply_with_params(self, params: Dict[str, Any], *args: Any, **kwargs: Any) -> Dict[str, Any]:
-        if params is None:
-            return kwargs
+        """Apply transforms with parameters."""
         params = self.update_params(params, **kwargs)
         res = {}
         for key, arg in kwargs.items():
@@ -110,6 +111,7 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
         return res
 
     def set_deterministic(self, flag: bool, save_key: str = "replay") -> "BasicTransform":
+        """Set transform to be deterministic."""
         if save_key == "params":
             msg = "params save_key is reserved"
             raise KeyError(msg)
@@ -124,27 +126,30 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
         return f"{self.__class__.__name__}({format_args(state)})"
 
     def _get_target_function(self, key: str) -> Callable[..., Any]:
+        """Returns function to process target"""
         transform_key = key
         if key in self._additional_targets:
             transform_key = self._additional_targets.get(key, key)
 
-        return self.targets.get(transform_key, lambda x, **p: x)
+        return self.targets.get(transform_key, noop)
 
     def apply(self, img: np.ndarray, *args: Any, **params: Any) -> np.ndarray:
         raise NotImplementedError
 
     def get_params(self) -> Dict[str, Any]:
+        """Returns parameters independent of input"""
         return {}
 
     @property
     def targets(self) -> Dict[str, Callable[..., Any]]:
-        # you must specify targets in subclass
-        # foe example:
-        # >>  ('image', 'mask')
-        # >>  ('image', 'boxes')
+        # mapping for targets and methods for which they depend
+        # for example:
+        # >>  {"image": self.apply}
+        # >>  {"masks": self.apply_to_masks}
         raise NotImplementedError
 
     def update_params(self, params: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """Update parameters with transform specific params"""
         if hasattr(self, "interpolation"):
             params["interpolation"] = self.interpolation
         if hasattr(self, "fill_value"):
@@ -172,9 +177,13 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
 
     @property
     def targets_as_params(self) -> List[str]:
+        """Targets used to get params"""
         return []
 
     def get_params_dependent_on_targets(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Returns parameters dependent on targets.
+        Dependent target is defined in `self.targets_as_params`
+        """
         raise NotImplementedError(
             "Method get_params_dependent_on_targets is not implemented in class " + self.__class__.__name__,
         )
