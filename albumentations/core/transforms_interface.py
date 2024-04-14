@@ -134,6 +134,7 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
         return self.targets.get(transform_key, noop)
 
     def apply(self, img: np.ndarray, *args: Any, **params: Any) -> np.ndarray:
+        """Apply transform on image."""
         raise NotImplementedError
 
     def get_params(self) -> Dict[str, Any]:
@@ -197,11 +198,13 @@ class BasicTransform(Serializable, metaclass=CombinedMeta):
         return True
 
     def get_transform_init_args_names(self) -> Tuple[str, ...]:
+        """Returns names of arguments that are used in __init__ method of the transform"""
         msg = f"Class {self.get_class_fullname()} is not serializable because the `get_transform_init_args_names` "
         "method is not implemented"
         raise NotImplementedError(msg)
 
     def get_base_init_args(self) -> Dict[str, Any]:
+        """Returns base init args - always_apply and p"""
         return {"always_apply": self.always_apply, "p": self.p}
 
     def get_transform_init_args(self) -> Dict[str, Any]:
