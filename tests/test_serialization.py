@@ -1029,7 +1029,7 @@ def test_template_transform_serialization(image, template, seed, p):
                 "mask_x_length": (10, 20),
                 "mask_y_length": 10,
                 "fill_value": 0,
-                "mask_fill_value": 1,
+               "mask_fill_value": 1,
             },
              A.PadIfNeeded: {
             "min_height": 512,
