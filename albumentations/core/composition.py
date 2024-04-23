@@ -2,6 +2,7 @@ import random
 import warnings
 from collections import defaultdict
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Union, cast
+from warnings import warn
 
 import numpy as np
 
@@ -368,6 +369,12 @@ class SomeOf(BaseCompose):
         super().__init__(transforms, p)
         self.n = n
         self.replace = replace
+        if not replace and n > len(transforms):
+            self.n = len(transforms)
+            warn(
+                f"`n` is greater than number of transforms. `n` will be set to number of transforms: {self.n}.",
+                UserWarning,
+            )
         transforms_ps = [t.p for t in self.transforms]
         s = sum(transforms_ps)
         self.transforms_ps = [t / s for t in transforms_ps]
