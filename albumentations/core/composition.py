@@ -1,7 +1,7 @@
 import random
 import warnings
 from collections import defaultdict
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Union, cast
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Union, cast
 from warnings import warn
 
 import numpy as np
@@ -27,6 +27,7 @@ __all__ = [
     "OneOrOther",
     "BboxParams",
     "KeypointParams",
+    "RandomOrder",
     "ReplayCompose",
     "Sequential",
     "TransformType",
@@ -353,26 +354,26 @@ class OneOf(BaseCompose):
 
 
 class SomeOf(BaseCompose):
-    """Select N transforms to apply. Selected transforms will be called with `force_apply=True`.
+    """Select some of N transforms to apply. Selected transforms will be called with `force_apply=True`.
     Transforms probabilities will be normalized to one 1, so in this case transforms probabilities works as weights.
-    If `replace` set to True, some transforms may run multiple times.
+    If `replace` is False will run `n` selected transforms.
+    If `replace` is True will run random number, less than `n` selected transforms.
 
     Args:
         transforms (list): list of transformations to compose.
         n (int): number of transforms to apply.
         replace (bool): Whether the sampled transforms are with or without replacement. Default: False.
         p (float): probability of applying selected transform. Default: 1.
-
     """
 
     def __init__(self, transforms: TransformsSeqType, n: int, replace: bool = False, p: float = 1):
         super().__init__(transforms, p)
         self.n = n
         self.replace = replace
-        if not replace and n > len(transforms):
-            self.n = len(transforms)
+        if not replace and n >= len(self.transforms):
+            self.n = len(self.transforms) - 1
             warn(
-                f"`n` is greater than number of transforms. `n` will be set to number of transforms: {self.n}.",
+                f"`n` is greater than number of transforms. `n` will be set to {self.n}.",
                 UserWarning,
             )
         transforms_ps = [t.p for t in self.transforms]
@@ -386,12 +387,16 @@ class SomeOf(BaseCompose):
             return data
 
         if self.transforms_ps and (force_apply or random.random() < self.p):
-            idx = random_utils.choice(len(self.transforms), size=self.n, replace=self.replace, p=self.transforms_ps)
-            idx.sort()
-            for i in idx:
+            params = self._get_params()
+            for i in params["idx"]:
                 t = self.transforms[i]
                 data = t(force_apply=True, **data)
         return data
+
+    def _get_params(self) -> Dict[str, Iterable[int]]:
+        idx = random_utils.choice(len(self.transforms), size=self.n, replace=self.replace, p=self.transforms_ps)
+        idx.sort()
+        return {"idx": set(idx)}
 
     def to_dict_private(self) -> Dict[str, Any]:
         dictionary = super().to_dict_private()
@@ -399,7 +404,7 @@ class SomeOf(BaseCompose):
         return dictionary
 
 
-class RandomOrder(BaseCompose):
+class RandomOrder(SomeOf):
     """Select N transforms to apply. Selected transforms will be called in random order with `force_apply=True`.
     Transforms probabilities will be normalized to one 1, so in this case transforms probabilities works as weights.
     This transform is like SomeOf, but transforms are called with random order.
@@ -414,30 +419,11 @@ class RandomOrder(BaseCompose):
     """
 
     def __init__(self, transforms: TransformsSeqType, n: int, replace: bool = True, p: float = 1):
-        super().__init__(transforms, p)
-        self.n = n
-        self.replace = replace
-        transforms_ps = [t.p for t in self.transforms]
-        s = sum(transforms_ps)
-        self.transforms_ps = [t / s for t in transforms_ps]
+        super().__init__(transforms, n, replace, p)
 
-    def __call__(self, *arg: Any, force_apply: bool = False, **data: Any) -> Dict[str, Any]:
-        if self.replay_mode:
-            for t in self.transforms:
-                data = t(**data)
-            return data
-
-        if self.transforms_ps and (force_apply or random.random() < self.p):
-            idx = random_utils.choice(len(self.transforms), size=self.n, replace=self.replace, p=self.transforms_ps)
-            for i in idx:
-                t = self.transforms[i]
-                data = t(force_apply=True, **data)
-        return data
-
-    def to_dict_private(self) -> Dict[str, Any]:
-        dictionary = super().to_dict_private()
-        dictionary.update({"n": self.n, "replace": self.replace})
-        return dictionary
+    def _get_params(self) -> Dict[str, Iterable[int]]:
+        idx = random_utils.choice(len(self.transforms), size=self.n, replace=self.replace, p=self.transforms_ps)
+        return {"idx": idx}
 
 
 class OneOrOther(BaseCompose):
