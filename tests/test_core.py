@@ -3,7 +3,6 @@ from unittest import mock
 from unittest.mock import MagicMock, Mock, call, patch
 
 import albumentations as A
-from albumentations.core.composition import BaseCompose
 
 import cv2
 import numpy as np
@@ -30,6 +29,7 @@ from albumentations.core.composition import (
     OneOf,
     OneOrOther,
     PerChannel,
+    RandomOrder,
     ReplayCompose,
     Sequential,
     SomeOf,
@@ -88,16 +88,31 @@ def test_one_of():
     assert len([transform for transform in transforms if transform.called]) == 1
 
 
-@pytest.mark.parametrize("N", [1, 2, 5, 10])
+@pytest.mark.parametrize("N", [1, 2, 5, 10, 12])
 @pytest.mark.parametrize("replace", [True, False])
 def test_n_of(N, replace):
     transforms = [Mock(p=1, side_effect=lambda **kw: {"image": kw["image"]}) for _ in range(10)]
     augmentation = SomeOf(transforms, N, p=1, replace=replace)
     image = np.ones((8, 8))
     augmentation(image=image)
+    runed = len([transform for transform in transforms if transform.called])
+    assert runed >= 1
     if not replace:
-        assert len([transform for transform in transforms if transform.called]) == N
-    assert sum([transform.call_count for transform in transforms]) == N
+        assert runed == (N if N < 10  else 9)
+    assert runed <= (N if N <= 10  else 10)
+
+
+@pytest.mark.parametrize("N", [1, 2, 5, 10, 12])
+@pytest.mark.parametrize("replace", [True, False])
+def test_rand_n_of(N, replace):
+    transforms = [Mock(p=1, side_effect=lambda **kw: {"image": kw["image"]}) for _ in range(10)]
+    augmentation = RandomOrder(transforms, N, p=1, replace=replace)
+    image = np.ones((8, 8))
+    augmentation(image=image)
+    if not replace:
+        assert len([transform for transform in transforms if transform.called]) == N if N < 10  else 9
+    else:
+        assert sum([transform.call_count for transform in transforms]) == N
 
 
 def test_sequential():
