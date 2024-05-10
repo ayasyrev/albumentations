@@ -191,6 +191,8 @@ class Compose(BaseCompose):
         additional_targets: Optional[Dict[str, str]] = None,
         p: float = 1.0,
         is_check_shapes: bool = True,
+        return_params: bool = False,
+        save_key: str = "applied_params",
     ):
         super().__init__(transforms, p)
 
@@ -227,6 +229,12 @@ class Compose(BaseCompose):
         self._check_each_transform = tuple(  # processors that checks after each transform
             proc for proc in self.processors.values() if getattr(proc.params, "check_each_transform", False)
         )
+        self.return_params = return_params
+        if return_params:
+            self.set_deterministic(True, save_key=save_key)
+            self.save_key = save_key
+            self._available_keys.add(save_key)
+            self._transforms_dict = get_transforms_dict(self.transforms)
 
     @staticmethod
     def _disable_check_args_for_transforms(transforms: TransformsSeqType) -> None:
@@ -239,15 +247,13 @@ class Compose(BaseCompose):
     def disable_check_args_private(self) -> None:
         self.is_check_args = False
 
-    def __call__(self, *args: Any, force_apply: bool = False, **data: Any) -> Dict[str, Any]:
-        if args:
-            msg = "You have to pass data to augmentations as named arguments, for example: aug(image=image)"
-            raise KeyError(msg)
-
+    def __call__(self, *, force_apply: bool = False, **data: Any) -> Dict[str, Any]:
         if not isinstance(force_apply, (bool, int)):
             msg = "force_apply must have bool or int type"
             raise TypeError(msg)
 
+        if self.return_params:
+            data[self.save_key] = OrderedDict()
         need_to_run = force_apply or random.random() < self.p
         if not need_to_run and not self._always_apply:
             return data
@@ -360,6 +366,28 @@ class Compose(BaseCompose):
                 result[key] = value
 
         return result
+
+    def run_with_params(self, *, params: Dict[int, Dict[str, Any]], **data: Any) -> Dict[str, Any]:
+        if self.is_check_args:
+            self._check_args(**data)
+
+        for p in self.processors.values():
+            p.ensure_data_valid(data)
+
+        for p in self.processors.values():
+            p.preprocess(data)
+
+        for transform_id, param in params.items():
+            transform = self._transforms_dict[transform_id]
+            data = transform.apply_with_params(params=param, **data)
+            if self._check_each_transform:
+                data = self._check_data_post_transform(data)
+        data = Compose._make_targets_contiguous(data)  # ensure output targets are contiguous
+
+        for p in self.processors.values():
+            p.postprocess(data)
+
+        return data
 
 
 class Compose2(Compose):
